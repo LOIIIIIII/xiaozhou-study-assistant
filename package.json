@@ -28,5 +28,6 @@
   },
   "main": "desktop/main.cjs",
   "description": "小舟本机学习助手",
-  "author": "LOIIIIIII"
+  "author": "LOIIIIIII",
+  "license": "SEE LICENSE IN LICENSE"
 }

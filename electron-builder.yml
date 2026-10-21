@@ -10,6 +10,9 @@ files:
   - public/**/*
   - examples/**/*
   - package.json
+  - LICENSE
+  - DISCLAIMER.md
+  - THIRD_PARTY_NOTICES.md
 extraResources:
   - from: .vendor/browsers
     to: browsers
