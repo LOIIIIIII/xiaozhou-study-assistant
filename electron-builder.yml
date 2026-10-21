@@ -35,6 +35,7 @@ nsis:
   createDesktopShortcut: true
 linux:
   category: Education
+  maintainer: LOIIIIIII <LOIIIIIII@users.noreply.github.com>
   target:
     - AppImage
     - deb
