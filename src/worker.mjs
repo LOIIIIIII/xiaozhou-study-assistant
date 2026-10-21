@@ -78,6 +78,7 @@ export class StudyWorker extends EventEmitter {
     allowedCourseURL(this.config.courseUrl,this.demo);
     if(this.state.running)return;
     this.epoch++;this.pending=null;this.lastAdvance=null;this.state.running=true;
+    this.endWait=null;this.pauseTimes=[];
     this.navigationGrace=Date.now()+15000;
     this.update('running','正在识别课程页面');this.log('开始运行；最高 '+clampSpeed(this.config.speed)+' 倍速');
     this.loop(this.epoch);
@@ -311,6 +312,9 @@ export class StudyWorker extends EventEmitter {
     if(!Array.isArray(answers)||answers.length!==this.pending.items.length)throw new Error('题目数量不符');
     answers.forEach((values,i)=>validateAnswer(this.pending.items[i].question,{answers:values,confidence:1}));
     this.pending.draft=answers;this.armReviewTimeout();
+  }
+  reviewActivity(){
+    if(this.state.reviewDeadline&&this.state.phase==='review'&&!this.state.running)this.armReviewTimeout();
   }
   async fill(items,frame,epoch){
     const fresh=await frame.evaluate(probeDocument);

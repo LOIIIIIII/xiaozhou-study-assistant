@@ -76,3 +76,9 @@ test('本地跨平台OCR不依赖外部网络',async()=>{
  worker.nativeOCR=false;const text=await worker.ocr(worker.page.mainFrame(),'#ocr');assert.match(text,/HELLO\s*123/);
  }finally{await cleanup();}
 });
+test('核对期间操作会重置等待时间，取消后操作不会重新启用自动提交',async()=>{
+ const {worker,cleanup}=await setup([]);
+ try{await prepareReview(worker);const old=worker.state.reviewDeadline;await sleep(100);worker.reviewActivity();
+ assert.ok(worker.state.reviewDeadline>old);worker.cancelReviewTimeout();worker.reviewActivity();assert.equal(worker.state.reviewDeadline,null);
+ }finally{await cleanup();}
+});

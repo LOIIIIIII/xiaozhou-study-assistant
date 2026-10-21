@@ -80,6 +80,7 @@ const server=http.createServer(async(req,res)=>{
       if(path==='/api/pause'){worker.stop();return json(res,200,{ok:true});}
       if(path==='/api/ai/stop'){worker.stopAI();await save('settings.json',config);return json(res,200,{ok:true});}
       if(path==='/api/review-draft'){worker.reviewDraft(value.answers);return json(res,200,{ok:true});}
+      if(path==='/api/review-activity'){worker.reviewActivity();return json(res,200,{ok:true});}
       if(path==='/api/review-cancel'){worker.cancelReviewTimeout();worker.log('已取消本节超时自动提交');return json(res,200,{ok:true});}
       if(path==='/api/close'){await worker.close();return json(res,200,{ok:true});}
       if(path==='/api/shutdown'){await worker.close();json(res,200,{ok:true});server.close(()=>process.exit(0));return;}

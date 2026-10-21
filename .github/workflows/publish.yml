@@ -17,6 +17,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Verify completed build
+        id: verify
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           BUILD_RUN_ID: ${{ inputs.build_run_id || github.event.workflow_run.id }}
@@ -25,8 +26,16 @@ jobs:
           gh api "repos/$GITHUB_REPOSITORY/actions/runs/$BUILD_RUN_ID" > build.json
           test "$(jq -r .conclusion build.json)" = success
           test "$(jq -r .name build.json)" = 'Desktop installers'
+          latest=$(gh api "repos/$GITHUB_REPOSITORY/commits/main" --jq .sha)
+          if test "$(jq -r .head_sha build.json)" != "$latest"; then
+            echo 'A newer commit exists; skip publishing this older build.'
+            echo 'eligible=false' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo 'eligible=true' >> "$GITHUB_OUTPUT"
           echo "BUILD_SHA=$(jq -r .head_sha build.json)" >> "$GITHUB_ENV"
       - uses: actions/download-artifact@v4
+        if: steps.verify.outputs.eligible == 'true'
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           run-id: ${{ inputs.build_run_id || github.event.workflow_run.id }}
@@ -34,6 +43,7 @@ jobs:
           merge-multiple: true
           path: installers
       - name: Publish installers
+        if: steps.verify.outputs.eligible == 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |

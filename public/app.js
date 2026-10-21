@@ -74,4 +74,7 @@ $('stop-ai').onclick=()=>action(async()=>{await api('ai/stop',{});$('aiEnabled')
 $('review-cancel').onclick=()=>action(()=>api('review-cancel',{}));
 function selectedAnswers(){return (state?.questions??[]).map((q,i)=>[...document.querySelectorAll('input[name="answer-'+i+'"]:checked')].map(e=>e.value));}
 $('questions').addEventListener('change',()=>{api('review-draft',{answers:selectedAnswers()}).catch(()=>api('review-cancel',{}).catch(()=>{}));});
+let lastActivity=0;
+function reviewActivity(){if(state?.phase==='review'&&state.reviewDeadline&&Date.now()-lastActivity>500){lastActivity=Date.now();api('review-activity',{}).catch(()=>{});}}
+document.addEventListener('pointerdown',reviewActivity);document.addEventListener('keydown',reviewActivity);
 setInterval(()=>{const deadline=state?.reviewDeadline;$('review-countdown').textContent=deadline?'无人操作 '+Math.max(0,Math.ceil((deadline-Date.now())/1000))+' 秒后自动提交当前推荐/所选答案；置信度不是正确率。':'本节不会超时自动提交。';$('stop-ai').disabled=!state?.config.aiEnabled;},500);
