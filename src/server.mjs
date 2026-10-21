@@ -7,15 +7,16 @@ import { randomBytes } from 'node:crypto';
 import { StudyWorker } from './worker.mjs';
 import { parseBank, allowedCourseURL, clampSpeed } from './core.mjs';
 import { completionURL } from './ai.mjs';
+import {defaultDataDir} from './platform.mjs';
 const root=dirname(dirname(fileURLToPath(import.meta.url)));
-const port=Number(process.env.STUDY_PORT??4318);
+let port=Number(process.env.STUDY_PORT??4318);
 const demo=process.env.STUDY_DEMO==='1';
-const dataDir=process.env.STUDY_DATA_DIR??join(homedir(),'Library','Application Support','LocalStudyAssistant');
+const dataDir=process.env.STUDY_DATA_DIR??defaultDataDir();
 await mkdir(dataDir,{recursive:true,mode:0o700});await chmod(dataDir,0o700);
 async function load(name,fallback){try{return JSON.parse(await readFile(join(dataDir,name),'utf8'));}catch{return fallback;}}
 async function save(name,data){await writeFile(join(dataDir,name),JSON.stringify(data,null,2),{mode:0o600});await chmod(join(dataDir,name),0o600);}
 const defaults={courseName:'创新创业基础',courseUrl:'',speed:2,answerMode:'suggest',minConfidence:0.95,
-  aiEnabled:false,visionEnabled:false,searchEnabled:false,apiBase:'',model:'',saveSecrets:false};
+  aiEnabled:false,visionEnabled:false,searchEnabled:false,apiBase:'',model:'',saveSecrets:false,reviewAutoSubmit:true,reviewTimeoutSeconds:60};
 const config={...defaults,...await load('settings.json',{})};
 const stored=await load('keys.json',{});
 const keys={apiKey:process.env.STUDY_AI_API_KEY??stored.apiKey??'',searchKey:process.env.STUDY_SEARCH_API_KEY??stored.searchKey??''};
@@ -42,7 +43,7 @@ const server=http.createServer(async(req,res)=>{
   if(req.headers['sec-fetch-site']==='cross-site')return json(res,403,{error:'不接受跨站请求'});
   const path=new URL(req.url,'http://'+host).pathname;
   try{
-    if(path==='/api/health')return json(res,200,{ok:true,version:'1.0.0',demo});
+    if(path==='/api/health')return json(res,200,{ok:true,version:'1.1.0',demo});
     if(path==='/api/session'&&req.method==='GET')return json(res,200,{token,demo});
     if(path.startsWith('/api/')){
       if(req.headers['x-study-token']!==token)return json(res,401,{error:'请从本机控制台操作'});
@@ -61,20 +62,25 @@ const server=http.createServer(async(req,res)=>{
         next.speed=clampSpeed(next.speed);
         if(!['suggest','fill','auto'].includes(next.answerMode))throw new Error('答题模式不正确');
         next.minConfidence=Number(next.minConfidence);if(!Number.isFinite(next.minConfidence)||next.minConfidence<0||next.minConfidence>1)throw new Error('置信度阈值需要在0到1之间');
-        for(const k of ['aiEnabled','visionEnabled','searchEnabled','saveSecrets'])next[k]=!!next[k];
+        for(const k of ['aiEnabled','visionEnabled','searchEnabled','saveSecrets','reviewAutoSubmit'])next[k]=!!next[k];
+        next.reviewTimeoutSeconds=Number(next.reviewTimeoutSeconds);
+        if(!Number.isInteger(next.reviewTimeoutSeconds)||next.reviewTimeoutSeconds<30||next.reviewTimeoutSeconds>3600)throw new Error('核对等待时间需为30～3600秒');
         next.apiBase=String(next.apiBase).trim();next.model=String(next.model).trim().slice(0,160);
         if(next.apiBase)completionURL(next.apiBase);
         if(value.apiKey)keys.apiKey=String(value.apiKey).trim();
         if(value.searchKey)keys.searchKey=String(value.searchKey).trim();
         if(value.clearApiKey)keys.apiKey='';
         if(value.clearSearchKey)keys.searchKey='';
-        Object.assign(config,next);await save('settings.json',config);
+        Object.assign(config,next);worker.armReviewTimeout();await save('settings.json',config);
         await save('keys.json',config.saveSecrets?keys:{});
         return json(res,200,{config:publicConfig()});
       }
       if(path==='/api/browser'){await worker.open({headed:!!value.headed});return json(res,200,{ok:true});}
       if(path==='/api/start'){await worker.startAtCourse();return json(res,200,{ok:true});}
       if(path==='/api/pause'){worker.stop();return json(res,200,{ok:true});}
+      if(path==='/api/ai/stop'){worker.stopAI();await save('settings.json',config);return json(res,200,{ok:true});}
+      if(path==='/api/review-draft'){worker.reviewDraft(value.answers);return json(res,200,{ok:true});}
+      if(path==='/api/review-cancel'){worker.cancelReviewTimeout();worker.log('已取消本节超时自动提交');return json(res,200,{ok:true});}
       if(path==='/api/close'){await worker.close();return json(res,200,{ok:true});}
       if(path==='/api/shutdown'){await worker.close();json(res,200,{ok:true});server.close(()=>process.exit(0));return;}
       if(path==='/api/import'){
@@ -93,6 +99,10 @@ const server=http.createServer(async(req,res)=>{
     res.writeHead(200,{'Content-Type':mime[extname(file)]??'application/octet-stream'});res.end(await readFile(join(root,file)));
   }catch(error){if(!res.headersSent)json(res,400,{error:error.message});else res.end();}
 });
-server.listen(port,'127.0.0.1',()=>console.log('本机学习助手 http://127.0.0.1:'+port));
+server.listen(port,'127.0.0.1',()=>{
+  port=server.address().port;allowedOrigins.clear();allowedOrigins.add('http://127.0.0.1:'+port);allowedOrigins.add('http://localhost:'+port);
+  console.log('本机学习助手 http://127.0.0.1:'+port);
+  process.parentPort?.postMessage({type:'ready',port});
+});
 for(const signal of ['SIGTERM','SIGINT'])process.on(signal,async()=>{await worker.close();server.close(()=>process.exit(0));});
 process.on('uncaughtException',error=>{console.error(error.message);process.exitCode=1;});

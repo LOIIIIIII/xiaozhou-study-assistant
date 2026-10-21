@@ -31,3 +31,8 @@ test('AI 响应验证和最小题目数据请求',async()=>{
  }});
  assert.equal(result.confidence,.8);assert.ok(!JSON.stringify(request).includes('local-secret'));
 });
+test('停止AI信号能取消正在等待的接口请求',async()=>{
+ const controller=new AbortController();
+ const request=solveAI(q,{apiBase:'https://example.com/v1',model:'test'},{apiKey:'local-secret'},{signal:controller.signal,fetcher:async(_url,options)=>new Promise((_resolve,reject)=>options.signal.addEventListener('abort',()=>reject(new Error('aborted')),{once:true}))});
+ controller.abort();await assert.rejects(request,/aborted/);
+});

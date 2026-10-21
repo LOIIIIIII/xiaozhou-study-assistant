@@ -1,0 +1,58 @@
+name: Desktop installers
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'src/**'
+      - 'public/**'
+      - 'desktop/**'
+      - 'tools/**'
+      - 'test/**'
+      - 'package*.json'
+      - 'electron-builder.yml'
+      - '.github/workflows/desktop.yml'
+permissions:
+  contents: read
+jobs:
+  package:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-14
+            name: mac-arm64
+          - os: macos-15-intel
+            name: mac-x64
+          - os: windows-latest
+            name: windows-x64
+          - os: ubuntu-22.04
+            name: linux-x64
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - run: npm run prepare-desktop
+      - if: runner.os == 'Linux'
+        run: npx playwright install-deps chromium
+      - run: npm test
+        env:
+          PLAYWRIGHT_BROWSERS_PATH: ${{ github.workspace }}/.vendor/browsers
+      - run: npm run dist
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Xiaozhou-${{ matrix.name }}
+          path: |
+            dist/*.dmg
+            dist/*.zip
+            dist/*.exe
+            dist/*.AppImage
+            dist/*.deb
+          if-no-files-found: error
+          retention-days: 14

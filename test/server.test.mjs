@@ -17,7 +17,7 @@ test('控制台跨站保护、密钥不回传、默认不落盘',async()=>{
   assert.equal(res.status,200);assert.ok(!(await res.text()).includes('test-only-key'));
   const state=await fetch(url+'/api/state',{headers:{'X-Study-Token':token}}).then(r=>r.text());
   assert.ok(!state.includes('test-only-key'));assert.deepEqual(JSON.parse(await readFile(join(dir,'keys.json'),'utf8')),{});
-  assert.equal((await stat(join(dir,'settings.json'))).mode&0o777,0o600);
+  if(process.platform!=='win32')assert.equal((await stat(join(dir,'settings.json'))).mode&0o777,0o600);
   const threshold=await fetch(url+'/api/config',{method:'POST',headers:{'Content-Type':'application/json','X-Study-Token':token},body:JSON.stringify({minConfidence:.6,answerMode:'auto'})});
   assert.equal(threshold.status,200);assert.equal((await threshold.json()).config.minConfidence,.6);
  }finally{child.kill('SIGTERM');await new Promise(r=>child.once('exit',r));await rm(dir,{recursive:true,force:true});}

@@ -1,14 +1,32 @@
 {
   "name": "local-study-assistant",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "private": true,
   "type": "module",
-  "engines": { "node": ">=20" },
+  "engines": {
+    "node": ">=20"
+  },
   "scripts": {
     "start": "node src/server.mjs",
     "test": "node --test test/*.test.mjs",
     "install-browser": "playwright install chromium",
-    "build-ocr": "swiftc tools/ocr.swift -O -o tools/ocr"
+    "build-ocr": "swiftc tools/ocr.swift -O -o tools/ocr",
+    "desktop": "electron .",
+    "prepare-desktop": "node tools/prepare-desktop.mjs",
+    "dist": "electron-builder --publish never"
   },
-  "dependencies": { "playwright": "1.64.1" }
+  "dependencies": {
+    "@tesseract.js-data/chi_sim": "^1.0.0",
+    "@tesseract.js-data/eng": "^1.0.0",
+    "playwright": "1.64.1",
+    "tesseract.js": "^7.0.0"
+  },
+  "devDependencies": {
+    "electron": "^45.0.0",
+    "electron-builder": "^26.15.3",
+    "pngjs": "^7.0.0"
+  },
+  "main": "desktop/main.cjs",
+  "description": "小舟本机学习助手",
+  "author": "LOIIIIIII"
 }

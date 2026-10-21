@@ -9,6 +9,7 @@ import { setTimeout as delay } from 'node:timers/promises';
 import { probeDocument } from './probe.mjs';
 import { fingerprint, matchBank, validateAnswer, allowedCourseURL, clampSpeed } from './core.mjs';
 import { solveAI } from './ai.mjs';
+import {createOfflineOCR} from './ocr.mjs';
 const execFileAsync=promisify(execFile);
 const root=dirname(dirname(fileURLToPath(import.meta.url)));
 const STOP=Symbol('stopped');
@@ -34,7 +35,7 @@ export class StudyWorker extends EventEmitter {
     await this.close();
     await mkdir(join(this.dataDir,'profile'),{recursive:true,mode:0o700});
     this.context=await chromium.launchPersistentContext(join(this.dataDir,'profile'),{
-      headless:!headed,viewport:{width:1280,height:900},acceptDownloads:false});
+      channel:'chromium',headless:!headed,viewport:{width:1280,height:900},acceptDownloads:false});
     this.context.setDefaultTimeout(7000);
     const activeContext=this.context;
     this.context.on('close',()=>{if(this.context===activeContext){this.context=null;this.page=null;this.attention('专用浏览器已关闭，请重新打开');}});
@@ -42,8 +43,10 @@ export class StudyWorker extends EventEmitter {
     this.page=this.context.pages()[0]??await this.context.newPage();this.attach(this.page);
     const initial=this.demo?this.config.courseUrl:'https://i.chaoxing.com/';
     allowedCourseURL(initial,this.demo);await this.page.goto(initial,{waitUntil:'domcontentloaded'});
-    this.ocrAvailable=await access(join(root,'tools','ocr')).then(()=>true,()=>false);
-    this.update('ready','专用浏览器已打开。可从右侧预览扫码；需输入密码或验证码时使用“显示登录窗口”');
+    this.ocrPath=process.env.STUDY_OCR_PATH??join(root,'tools','ocr');
+    this.nativeOCR=process.platform==='darwin'&&await access(this.ocrPath).then(()=>true,()=>false);
+    this.ocrAvailable=true;
+    this.update('ready','专用浏览器已打开。可从右侧预览扫码；二维码过期可点“刷新登录二维码”',{video:null,questions:[]});
     this.log(headed?'已打开独立登录窗口，不使用系统鼠标自动控制':'后台浏览器已启动');
   }
   attach(page){
@@ -95,12 +98,15 @@ export class StudyWorker extends EventEmitter {
     }
     this.start();
   }
+  cancelReviewTimeout(){clearTimeout(this.reviewTimer);this.reviewTimer=null;this.state.reviewDeadline=null;}
+  stopAI(){this.config.aiEnabled=false;this.aiAbort?.abort();this.log('AI 调用已停止；已发送请求可能仍由服务商计费，视频和本地题库可继续使用');}
   stop(log=true){
+    this.cancelReviewTimeout();this.aiAbort?.abort();
     this.state.running=false;this.epoch++;clearTimeout(this.timer);
     if(log){this.update('paused','已暂停。浏览器和登录状态保留');this.log('用户暂停任务');}
   }
   attention(message){this.stop(false);this.update('needs_attention',message);this.log(message,'warn');}
-  async close(){this.stop(false);const context=this.context;this.context=null;this.page=null;if(context)await context.close();}
+  async close(){this.stop(false);const context=this.context;this.context=null;this.page=null;if(context)await context.close();await this.ocrWorker?.terminate();this.ocrWorker=null;}
   async screenshot(){if(!this.page)throw new Error('浏览器未打开');return this.page.screenshot({type:'png',timeout:10000});}
   async qrcode(){
     if(!this.page)throw new Error('请先打开专用浏览器');
@@ -163,7 +169,7 @@ export class StudyWorker extends EventEmitter {
           return;
         }
         this.endWait=null;
-        const key='video:'+videoFrame.data.url;
+        const key='video:'+this.page.url()+':'+videoFrame.data.url;
         if(!this.seen.has(key)){this.seen.add(key);this.state.completedVideos++;this.log('视频任务点已由平台确认完成');}
         return this.advance(frames,signature,epoch);
       }
@@ -240,7 +246,12 @@ export class StudyWorker extends EventEmitter {
   async ocr(frame,selector){
     if(!this.ocrAvailable)return null;
     const file=join(this.dataDir,'ocr-'+Date.now()+'-'+Math.random().toString(16).slice(2)+'.png');
-    try{await frame.locator(selector).screenshot({path:file});const {stdout}=await execFileAsync(join(root,'tools','ocr'),[file],{timeout:20000,maxBuffer:2_000_000});return JSON.parse(stdout).map(x=>x.text).join('\n');}
+    try{
+      await frame.locator(selector).screenshot({path:file});
+      if(this.nativeOCR){const {stdout}=await execFileAsync(this.ocrPath,[file],{timeout:20000,maxBuffer:2_000_000});return JSON.parse(stdout).map(x=>x.text).join('\n');}
+      this.ocrWorker??=await createOfflineOCR(join(this.dataDir,'ocr-data'));
+      const result=await this.ocrWorker.recognize(file);return result.data.text.trim();
+    }
     finally{await unlink(file).catch(()=>{});}
   }
   async decode(question,frame){
@@ -264,8 +275,10 @@ export class StudyWorker extends EventEmitter {
         if(question.obfuscated&&!question.ocr&&!this.config.visionEnabled){items.push({question,rawKey:fingerprint(raw),answer:null,error:'混淆字体未能本地识别，需要视觉模型或手动答案'});continue;}
         this.state.aiCalls++;this.update('solving','正在请求 AI 分析题目 '+(items.length+1));
         let image;if(this.config.visionEnabled&&question.obfuscated&&!question.ocr)image=(await frame.locator(raw.selector).screenshot()).toString('base64');
-        answer=await solveAI(question,this.config,this.keys,{image});this.guard(epoch);
-        this.cache.set(key,answer);
+        this.aiAbort=new AbortController();
+        try{answer=await solveAI(question,this.config,this.keys,{image,signal:this.aiAbort.signal});this.guard(epoch);this.cache.set(key,answer);}
+        catch(error){this.guard(epoch);items.push({question,rawKey:fingerprint(raw),answer:null,error:this.aiAbort.signal.aborted?'AI 已停止，需手动选择答案':error.message});continue;}
+        finally{this.aiAbort=null;}
       }
       items.push({question,rawKey:fingerprint(raw),answer,error:answer?null:'题库未命中，且未配置 AI 解题'});
     }
@@ -273,11 +286,31 @@ export class StudyWorker extends EventEmitter {
     this.state.questions=items.map(i=>({...i.question,answer:i.answer,error:i.error}));
     const missing=items.some(i=>!i.answer||i.answer.confidence<=Number(this.config.minConfidence??0.95));
     if(missing||this.config.answerMode==='suggest'){
-      this.stop(false);this.update('review',missing?'部分题目需要你核对，未自动填写或提交':'答案已准备好，等待你核对');return;
+      this.stop(false);this.update('review',missing?'部分题目需要你核对，未自动填写或提交':'答案已准备好，等待你核对');this.armReviewTimeout();return;
     }
     await this.fill(items,frame,epoch);
     if(this.config.answerMode==='auto')return this.submit(frame,epoch);
-    this.stop(false);this.update('review','本节已填写，等待你确认提交');
+    this.stop(false);this.update('review','本节已填写，等待你确认提交');this.armReviewTimeout();
+  }
+  armReviewTimeout(){
+    this.cancelReviewTimeout();
+    if(!this.config.reviewAutoSubmit||!this.pending||this.state.phase!=='review')return;
+    const pending=this.pending;
+    if(pending.items.some(item=>item.error||!item.answer?.answers?.length)){this.log('没有完整且无冲突的推荐答案，本节不会超时自动提交','warn');return;}
+    const seconds=Number(this.config.reviewTimeoutSeconds??60);
+    this.state.reviewDeadline=Date.now()+seconds*1000;
+    this.reviewTimer=setTimeout(async()=>{
+      if(this.pending!==pending||this.state.phase!=='review'||this.state.running)return;
+      this.log('人工核对等待超时，采用当前推荐/所选答案自动提交（未经本人确认）','warn');
+      const answers=pending.draft??pending.items.map(item=>item.answer.answers);
+      try{await this.review(answers,{submit:true,source:'等待超时自动采用，未经本人确认'});}catch(error){this.attention(error.message);}
+    },seconds*1000);
+  }
+  reviewDraft(answers){
+    if(!this.pending||this.state.phase!=='review'||this.state.running)throw new Error('当前没有待核对的题目');
+    if(!Array.isArray(answers)||answers.length!==this.pending.items.length)throw new Error('题目数量不符');
+    answers.forEach((values,i)=>validateAnswer(this.pending.items[i].question,{answers:values,confidence:1}));
+    this.pending.draft=answers;this.armReviewTimeout();
   }
   async fill(items,frame,epoch){
     const fresh=await frame.evaluate(probeDocument);
@@ -307,11 +340,13 @@ export class StudyWorker extends EventEmitter {
     }
     this.attention('提交结果尚未确认，为避免重复提交已暂停，请检查页面');
   }
-  async review(answers,{submit=false}={}){
+  async review(answers,{submit=false,source='本人确认'}={}){
+    if(this.state.running)throw new Error('本节正在处理，请勿重复提交');
     if(!this.pending)throw new Error('当前没有待核对的题目');
     const {frame,items}=this.pending;
     if(!Array.isArray(answers)||answers.length!==items.length)throw new Error('请核对每一道题的答案');
-    for(let i=0;i<items.length;i++)items[i].answer=validateAnswer(items[i].question,{answers:answers[i],confidence:1,source:'本人确认'});
+    this.cancelReviewTimeout();
+    for(let i=0;i<items.length;i++)items[i].answer=validateAnswer(items[i].question,{answers:answers[i],confidence:source==='本人确认'?1:items[i].answer?.confidence??0,source});
     this.epoch++;const epoch=this.epoch;this.state.running=true;
     try{await this.fill(items,frame,epoch);if(submit){await this.submit(frame,epoch);this.loop(epoch);}
       else {this.stop(false);this.update('review','已填写，等待确认提交');}}

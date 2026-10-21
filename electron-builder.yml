@@ -1,0 +1,40 @@
+appId: cn.xiaozhou.studyassistant
+productName: Xiaozhou
+icon: .vendor/icon.png
+asar: false
+directories:
+  output: dist
+files:
+  - desktop/**/*
+  - src/**/*
+  - public/**/*
+  - examples/**/*
+  - package.json
+extraResources:
+  - from: .vendor/browsers
+    to: browsers
+    filter:
+      - '**/*'
+      - '!.links/**'
+  - from: .vendor/native
+    to: native
+    filter:
+      - '**/*'
+artifactName: '${productName}-${version}-${os}-${arch}.${ext}'
+mac:
+  category: public.app-category.education
+  target:
+    - dmg
+    - zip
+win:
+  target:
+    - nsis
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+linux:
+  category: Education
+  target:
+    - AppImage
+    - deb

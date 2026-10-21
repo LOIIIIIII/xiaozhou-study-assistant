@@ -5,7 +5,7 @@ import {readFile,mkdtemp,rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {StudyWorker} from '../src/worker.mjs';
-import {parseBank} from '../src/core.mjs';
+import {parseBank,fingerprint} from '../src/core.mjs';
 import {probeDocument} from '../src/probe.mjs';
 const sleep=ms=>new Promise(r=>setTimeout(r,ms));
 async function setup(bank){
@@ -44,5 +44,35 @@ test('隐藏登录 iframe 不干扰课程识别',async()=>{
  await worker.page.setContent('<h1>已登录的课程列表</h1><iframe hidden srcdoc="<input type=password>"></iframe>');
  assert.equal((await worker.frames()).length,1);
  const data=await worker.page.evaluate(probeDocument);assert.equal(data.login,false);
+ }finally{await cleanup();}
+});
+async function prepareReview(worker){
+ await worker.page.locator('#next').click();
+ const question=(await worker.page.evaluate(probeDocument)).questions[0];
+ worker.cache.set(fingerprint(question),{answers:['A'],confidence:.5,source:'AI · 测试'});
+ worker.config.reviewAutoSubmit=true;worker.config.reviewTimeoutSeconds=.4;
+ worker.start();while(worker.state.running)await sleep(20);
+ assert.equal(worker.state.phase,'review');
+}
+test('人工核对超时后采用已有推荐答案提交，日志不声称本人确认',async()=>{
+ const {worker,cleanup}=await setup([]);
+ try{await prepareReview(worker);assert.ok(worker.state.reviewDeadline>Date.now());
+ const until=Date.now()+8000;while(Date.now()<until&&worker.state.phase!=='done')await sleep(50);
+ assert.equal(worker.state.phase,'done',worker.state.message);assert.ok(worker.state.logs.some(l=>l.message.includes('未经本人确认')));
+ }finally{await cleanup();}
+});
+test('取消超时或暂停后不会提交；停止AI会中止请求但保留设置和密钥',async()=>{
+ const {worker,cleanup}=await setup([]);
+ try{await prepareReview(worker);worker.cancelReviewTimeout();await sleep(600);
+ assert.equal(worker.state.phase,'review');assert.equal(await worker.page.locator('#submit').count(),1);
+ worker.config.aiEnabled=true;worker.keys.apiKey='test-key';worker.aiAbort=new AbortController();const signal=worker.aiAbort.signal;
+ worker.stopAI();assert.equal(signal.aborted,true);assert.equal(worker.config.aiEnabled,false);assert.equal(worker.keys.apiKey,'test-key');
+ worker.stop();assert.equal(worker.state.reviewDeadline,null);
+ }finally{await cleanup();}
+});
+test('本地跨平台OCR不依赖外部网络',async()=>{
+ const {worker,cleanup}=await setup([]);
+ try{await worker.page.setContent('<div id="ocr" style="font:64px Arial;background:white;color:black;padding:30px;width:500px">HELLO 123</div>');
+ worker.nativeOCR=false;const text=await worker.ocr(worker.page.mainFrame(),'#ocr');assert.match(text,/HELLO\s*123/);
  }finally{await cleanup();}
 });
