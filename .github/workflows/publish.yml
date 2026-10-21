@@ -1,0 +1,50 @@
+name: Publish desktop preview
+on:
+  workflow_dispatch:
+    inputs:
+      build_run_id:
+        description: Successful Desktop installers run ID
+        required: true
+permissions:
+  contents: write
+  actions: read
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify completed build
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BUILD_RUN_ID: ${{ inputs.build_run_id }}
+        run: |
+          [[ "$BUILD_RUN_ID" =~ ^[0-9]+$ ]]
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$BUILD_RUN_ID" > build.json
+          test "$(jq -r .conclusion build.json)" = success
+          test "$(jq -r .name build.json)" = 'Desktop installers'
+          echo "BUILD_SHA=$(jq -r .head_sha build.json)" >> "$GITHUB_ENV"
+      - uses: actions/download-artifact@v4
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          run-id: ${{ inputs.build_run_id }}
+          pattern: Xiaozhou-*
+          merge-multiple: true
+          path: installers
+      - name: Publish installers
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          cd installers
+          sha256sum * > SHA256SUMS
+          cd ..
+          cat > notes.md <<'NOTES'
+          小舟桌面预览版，自带运行环境、专用 Chromium 与离线 OCR。
+
+          - Windows x64：下载 .exe
+          - macOS：按 Apple Silicon (arm64) 或 Intel (x64) 下载 .dmg
+          - Linux x64：下载 .deb 或 .AppImage
+          - 新增停止 AI 调用、60 秒人工核对超时提交，以及刷新登录二维码按钮。
+
+          每位使用者自行登录并填写自己的 API Key。安装包不包含开发者的登录信息、课程链接或密钥。
+          当前为未签名预览版；不能保证所有课程及 Linux 发行版兼容。AI 答案仍可能出错。
+          NOTES
+          gh release create v1.1.0 installers/* --repo "$GITHUB_REPOSITORY" --target "$BUILD_SHA" --title '小舟 v1.1.0 桌面预览版' --prerelease --notes-file notes.md
