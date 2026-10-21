@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>小舟 · 本机学习助手</title><link rel="stylesheet" href="/style.css"></head>
+<body>
+  <header class="masthead"><a class="brand" href="/"><span class="brand-mark">舟</span><span>小舟 <small>LOCAL STUDY DESK</small></span></a><span class="local-label"><i></i> 仅在你的电脑上运行</span></header>
+  <main>
+    <div id="demo-banner" class="notice hidden">演示环境 · 当前任务来自本地测试页面，不连接真实课程。</div>
+    <section class="intro"><div><p class="eyebrow">YOUR TIME, BACK IN YOUR HANDS</p><h1>课程任务，本机运行。</h1><p>视频与任务切换交给程序。题库优先，按需调用 AI。</p></div><div class="speed-stamp"><strong id="speed-stamp">2<span>×</span></strong><small>最高播放速度</small></div></section>
+    <nav class="tabs" aria-label="面板"><button class="tab active" data-tab="run">01 运行台</button><button class="tab" data-tab="bank">02 题库</button><button class="tab" data-tab="ai">03 AI 接口</button></nav>
+    <div id="toast" role="status" class="toast hidden"></div>
+    <section id="panel-run" class="panel">
+      <div class="run-grid">
+        <div class="control-card">
+          <div class="section-top"><span class="eyebrow">CONTROL ROOM</span><span id="phase" class="status-pill">等待配置</span></div>
+          <h2 id="message">先打开专用浏览器并扫码登录</h2>
+          <form id="run-form">
+            <label>课程或当前章节地址<input id="courseUrl" type="url" placeholder="粘贴学习通课程 / studentstudy 页面地址"></label>
+            <label>课程名称<input id="courseName" placeholder="创新创业基础"></label>
+            <div class="form-row"><label>最高倍速<select id="speed"><option value="1">1 ×</option><option value="1.25">1.25 ×</option><option value="1.5">1.5 ×</option><option value="2" selected>2 ×</option></select></label>
+            <label>答题方式<select id="answerMode"><option value="suggest">生成建议，等我核对</option><option value="fill">自动填写，等我提交</option><option value="auto">自动填写并提交章节作业</option></select></label></div>
+            <p class="fine">平台禁止倍速时按实际允许速度处理。题库匹配与 AI 置信度不等于答案正确率。</p>
+            <button class="text-button" type="submit">保存运行配置 <span>↗</span></button>
+          </form>
+          <div class="actions"><button id="open-browser" class="button secondary">扫码登录</button><button id="start" class="button primary">开始运行 <span>→</span></button><button id="pause" class="button quiet">暂停</button></div>
+          <div class="video-meter"><div class="meter-heading"><span id="video-label">尚未播放视频</span><strong id="video-time">— / —</strong></div><progress id="progress" max="1" value="0"></progress><p id="actual-speed">后台使用专用浏览器，不占用系统鼠标。</p></div>
+        </div>
+        <aside class="preview-card"><div class="section-top"><span class="eyebrow">PRIVATE BROWSER</span><button id="refresh-preview" class="text-button">刷新预览 ↻</button></div><div class="browser-bar"><i></i><i></i><i></i><span>独立会话 · 登录信息保存在本机</span></div><div class="preview-stage"><img id="preview" alt="专用浏览器预览与登录二维码" class="hidden"><div id="preview-empty"><span class="window-icon">▣</span><h3>在这里扫码登录</h3><p>点击“扫码登录”打开专用浏览器。<br>二维码会出现在这里。</p></div></div><div class="preview-footer"><button id="headed" class="text-button">显示登录窗口 ↗</button><span>验证码、密码和身份验证由本人完成</span></div></aside>
+      </div>
+      <div class="metrics"><div><span>本次完成视频</span><strong id="count-videos">0</strong></div><div><span>本次确认测验</span><strong id="count-quizzes">0</strong></div><div><span>题库命中</span><strong id="count-hits">0</strong></div><div><span>AI 请求</span><strong id="count-ai">0</strong></div></div>
+      <section id="review-section" class="review-section hidden"><div class="section-top"><h2>本节题目核对</h2><span>确认全部答案后可填写或提交</span></div><div id="questions"></div><div class="actions"><button id="review-fill" class="button secondary">采用所选答案并填写</button><button id="review-submit" class="button primary">确认答案并提交本节</button></div></section>
+      <section class="activity"><div class="section-top"><h2>运行记录</h2><span>进度由本地程序监测，不需要持续对话</span></div><ol id="logs"><li class="empty-log">等待开始第一项任务。</li></ol></section>
+    </section>
+    <section id="panel-bank" class="panel hidden"><div class="section-top"><div><p class="eyebrow">ANSWER LIBRARY</p><h2>把已有答案用起来。</h2></div><span class="status-pill"><b id="bank-count">0</b> 条题目</span></div>
+      <div class="bank-grid"><div><label>选择题库文件<input id="bank-file" type="file" accept=".json,.csv,.txt,text/plain,application/json,text/csv"></label><label>或粘贴题库文本<textarea id="bank-text" rows="13" placeholder="1、题目内容&#10;A、选项内容&#10;B、选项内容&#10;答案：A"></textarea></label><div class="actions"><button id="import-bank" class="button primary">导入题库</button><button id="export-bank" class="button secondary">导出本机题库</button></div></div><aside class="guide"><span class="eyebrow">MATCH THE CONTENT</span><h3>保留选项内容，<br>才能正确匹配换序题。</h3><p>支持 JSON、CSV 和分题纯文本。只有答案字母、没有原选项的题目不会被直接套用。</p><p>同一道题存在互相冲突的答案时，程序会停下来请你核对。</p><a href="/example.json" download="answers-example.json" class="text-button">下载 JSON 格式示例 ↗</a><p class="fine">导入内容仅保存在本机。示例包含一题已实测100分的选择题，不代表整份网络题库均已验证。</p></aside></div>
+    </section>
+    <section id="panel-ai" class="panel hidden"><div class="section-top"><div><p class="eyebrow">ONLY WHEN NEEDED</p><h2>题库未命中，再请 AI 帮忙。</h2></div><span class="status-pill" id="api-status">未配置接口</span></div>
+      <form id="ai-form" class="ai-grid"><div><label class="check-label"><input id="aiEnabled" type="checkbox"> 启用 AI 辅助解题</label><label>OpenAI 兼容接口地址<input id="apiBase" type="url" placeholder="https://你的服务商地址/v1"></label><label>模型名称<input id="model" placeholder="填写服务商提供的模型 ID"></label><label>API 密钥<input id="apiKey" type="password" autocomplete="off" placeholder="留空保留本次已配置的密钥"></label><label>自动处理最低置信度<input id="minConfidence" type="number" min="0" max="1" step="0.01" value="0.95"></label></div>
+      <div><label class="check-label"><input id="visionEnabled" type="checkbox"> 本地识别失败时使用视觉模型</label><p class="fine">Mac 本地 OCR 优先识别混淆字体，不调用模型。视觉模式需要所填模型支持图片输入。</p><label class="check-label"><input id="searchEnabled" type="checkbox"> 启用 Tavily 联网检索</label><label>Tavily API 密钥<input id="searchKey" type="password" autocomplete="off" placeholder="可选；只在联网检索时使用"></label><label class="check-label"><input id="saveSecrets" type="checkbox"> 将密钥保存到本机配置文件</label><p class="fine">默认仅在本次进程内保留。选中后以当前用户可读写权限保存；不会写入程序源码或运行日志。</p><div class="data-note"><strong>发送哪些内容？</strong><p>启用 AI 后，题干和选项会发送到你填写的接口。开启视觉模式时另含当前题目截图；开启联网检索时会把题干发送到 Tavily。</p></div></div>
+      <div class="full"><button class="button primary" type="submit">保存 API 设置</button></div></form>
+    </section>
+  </main><footer>小舟 LOCAL STUDY DESK <span>本机运行 · 正常播放 · 平台确认完成后再切换</span></footer>
+<dialog id="qr-dialog"><h2>使用学习通 App 扫码</h2><p>二维码已单独放大。过期时关闭后重新打开。</p><img id="qr-large" alt="放大的登录二维码"><button id="qr-close" class="button secondary">关闭</button></dialog>
+<script src="/app.js" type="module"></script></body></html>
