@@ -1,5 +1,8 @@
 name: Publish desktop preview
 on:
+  workflow_run:
+    workflows: [Desktop installers]
+    types: [completed]
   workflow_dispatch:
     inputs:
       build_run_id:
@@ -10,12 +13,13 @@ permissions:
   actions: read
 jobs:
   publish:
+    if: github.event_name == 'workflow_dispatch' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'main' && github.event.workflow_run.head_repository.full_name == github.repository)
     runs-on: ubuntu-latest
     steps:
       - name: Verify completed build
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          BUILD_RUN_ID: ${{ inputs.build_run_id }}
+          BUILD_RUN_ID: ${{ inputs.build_run_id || github.event.workflow_run.id }}
         run: |
           [[ "$BUILD_RUN_ID" =~ ^[0-9]+$ ]]
           gh api "repos/$GITHUB_REPOSITORY/actions/runs/$BUILD_RUN_ID" > build.json
@@ -25,7 +29,7 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
-          run-id: ${{ inputs.build_run_id }}
+          run-id: ${{ inputs.build_run_id || github.event.workflow_run.id }}
           pattern: Xiaozhou-*
           merge-multiple: true
           path: installers
@@ -33,6 +37,10 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          if gh release view v1.1.0 --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo 'v1.1.0 already exists; existing release assets are not overwritten.'
+            exit 0
+          fi
           cd installers
           sha256sum * > SHA256SUMS
           cd ..
